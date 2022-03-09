@@ -1,46 +1,7 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
-# %pip install haversine # 필요 패키지
-
-
-# In[2]:
-
-
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from haversine import haversine
-
-file = pd.read_csv("./taxi_february.txt", sep=";")
-file = file.rename(columns={ ' TIMESTAMP': 'TIMESTAMP', ' LOCATION': 'LOCATION'})
-
-# 날짜 추출의 편의를 위해 TIMESTAMP row를 Datetime 항목으로 변경하여 저장
-file["TIMESTAMP"] = pd.to_datetime(file["TIMESTAMP"])
-# 거리 계산의 편의를 위해 LOCATION row를 (float, float) 형식의 튜플로 변경하여 저장
-temp_location = file["LOCATION"].str.split()
-def createLocation(t):
-    return (float(t[0][6:]), float(t[1][:-1]))
-
-file["LOCATION"] = temp_location.map(createLocation)
-
-
-# In[3]:
-
-
-# 2014-02-01부터 2014-02-15까지 훈련 데이터
-# 2014-02-16부터 2014-03-02까지 검증 데이터
-train_mask = (file["TIMESTAMP"] >= '2014-02-01') & (file["TIMESTAMP"] <= '2014-02-15')
-test_mask = ~train_mask
-train = file.loc[train_mask]
-test = file.loc[test_mask]
-
-
-# In[4]:
-
 
 server_location=[(41.9797074301314, 12.517774537227256),
 (41.96645724499441, 12.442500521765464),
@@ -55,72 +16,61 @@ server_location=[(41.9797074301314, 12.517774537227256),
 (41.88291790209538, 12.534428295360426),
 (41.905086456104385, 12.488293373328746)]
 
+def get_data():
+    file = pd.read_csv("./taxi_february.txt", sep=";")
+    file = file.rename(columns={ ' TIMESTAMP': 'TIMESTAMP', ' LOCATION': 'LOCATION'})
 
-# In[5]:
+    # 날짜 추출의 편의를 위해 TIMESTAMP row를 Datetime 항목으로 변경하여 저장
+    file["TIMESTAMP"] = pd.to_datetime(file["TIMESTAMP"])
+    # 거리 계산의 편의를 위해 LOCATION row를 (float, float) 형식의 튜플로 변경하여 저장
+    temp_location = file["LOCATION"].str.split()
+    def createLocation(t):
+        return (float(t[0][6:]), float(t[1][:-1]))
 
+    file["LOCATION"] = temp_location.map(createLocation)
 
-train.sort_values(by=["ID", "TIMESTAMP"], inplace=True, ascending=True) # 총 8,300,961개의 columns
-
-
-# In[6]:
-
-
-test.sort_values(by=["ID", "TIMESTAMP"], inplace=True, ascending=True) # 총 8,300,961개의 columns
-
-
-# In[7]:
-
-
-#20000개 이상의 데이터를 갖고 있지 않는 데이터 거르기.
-group_train=train.groupby(train["ID"])
-train_data=group_train.filter(lambda g: len(g)>20000)
-
-group_test=test.groupby(train["ID"])
-test_data=group_train.filter(lambda g: len(g)>20000)
-
-
-num_train=set(list(train_data["ID"]))
-num_test=set(list(test_data["ID"]))
-
-num_ID=num_train and num_test  # train데이터와 test데이터에서 둘다 20000개를 넘게 갖고있는 데이터의 ID
-
-
-# In[8]:
-
-
-#Train 데이터에서 20000개 이상의 데이터중 200개의 차량 선택
-
-data_train=train_data
-num_train=num_train - set(list(num_ID)[:200])
-for i in list(num_train):
-    data_train=data_train.drop(index=data_train[data_train["ID"]==i].index)
-
-
-# In[9]:
-
-
-#Test 데이터에서 20000개 이상의 데이터중 200개의 차량 선택
-
-
-data_test=test_data
-num_test=num_test - set(list(num_ID)[:200])
-for i in list(num_test):
-    data_test=data_test.drop(index=data_test[data_test["ID"]==i].index)
-
-
-# In[ ]:
+    # 2014-02-01부터 2014-02-15까지 훈련 데이터
+    # 2014-02-16부터 2014-03-02까지 검증 데이터
+    train_mask = (file["TIMESTAMP"] >= '2014-02-01') & (file["TIMESTAMP"] <= '2014-02-15')
+    test_mask = ~train_mask
+    train = file.loc[train_mask]
+    test = file.loc[test_mask]
 
 
 
+    train.sort_values(by=["ID", "TIMESTAMP"], inplace=True, ascending=True) # 총 8,300,961개의 columns
+
+    test.sort_values(by=["ID", "TIMESTAMP"], inplace=True, ascending=True) # 총 8,300,961개의 columns
+
+    #20000개 이상의 데이터를 갖고 있지 않는 데이터 거르기.
+    group_train=train.groupby(train["ID"])
+    train_data=group_train.filter(lambda g: len(g)>20000)
+
+    group_test=test.groupby(train["ID"])
+    test_data=group_train.filter(lambda g: len(g)>20000)
+
+    num_train=set(list(train_data["ID"]))
+    num_test=set(list(test_data["ID"]))
+
+    num_ID=num_train and num_test  # train데이터와 test데이터에서 둘다 20000개를 넘게 갖고있는 데이터의 ID
+
+    #Train 데이터에서 20000개 이상의 데이터중 200개의 차량 선택
+
+    data_train=train_data
+    num_train=num_train - set(list(num_ID)[:200])
+    for i in list(num_train):
+        data_train=data_train.drop(index=data_train[data_train["ID"]==i].index)
+
+    #Test 데이터에서 20000개 이상의 데이터중 200개의 차량 선택
 
 
-# In[ ]:
-
-
-
-
-
-# In[10]:
+    data_test=test_data
+    num_test=num_test - set(list(num_ID)[:200])
+    for i in list(num_test):
+        data_test=data_test.drop(index=data_test[data_test["ID"]==i].index)
+        
+    
+    return data_test,data_train
 
 
 # 각 ID의 차량에서 20001개의 데이터만 추출 후 index reset
@@ -148,10 +98,6 @@ def preproc(data):
     
     return file
 
-
-# In[11]:
-
-
 #각 시간별 서버와의 위치, 속도, 추출 후 csv 파일 저장
 #[ID, TIMESTAMP, LOCATION, DISTANCE] 형식의 파일로 저장될 예정 DISTANCE는 각 서버에대한 거리를 LIST형식으로 받는다.
 
@@ -164,7 +110,7 @@ def get_v(data,server_location,train=True):
     distance_list=[]
     num=0
     for i, row in tqdm(test.iterrows(),total=test.shape[0]):
-        distance_list.append(list(map(lambda x: haversine(x, row["LOCATION"]), server_location)))
+        distance_list.append(list(map(lambda x: haversine(x, row["LOCATION"])*1000, server_location)))
 
         if row["ID"] == prev_id:
             time_diff = row["TIMESTAMP"] - prev_timestamp
@@ -208,27 +154,27 @@ def get_v(data,server_location,train=True):
         num+=1
         if (num==20001):
             num=0
-
-    test['DISTANCE']=distance_list
+    distance_list=np.array(distance_list)
+    for i in range(len(server_location)):
+        dist_name=("DIST_%s"%(i+1))
+        test[dist_name]=distance_list[:,i]
     test = test.drop(index=test[test["TIMESTAMP"]==0].index)
-
+    test = test.drop(columns="LOCATION")
 
     if train:
         test.to_csv("./train.csv",index = False)
     else:
         test.to_csv("./test.csv",index = False)
 
-
-# In[12]:
-
-
-f=preproc(data_test)
-get_v(f,server_location,False)
-f=preproc(data_train)
-get_v(f,server_location,True)
-
-
-# In[ ]:
+if(__name__=="__main__"):
+    print("===============Start preprocessing===============")
+    data_test,data_train=get_data();
+    print("===============Get test data===============")
+    f=preproc(data_test)
+    get_v(f,server_location,False)
+    print("===============Get train data===============")
+    f=preproc(data_train)
+    get_v(f,server_location,True)
 
 
 
