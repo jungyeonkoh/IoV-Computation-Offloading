@@ -28,15 +28,14 @@ class Task:
         self.e_weight = e_weight
 
 class Server:
-    def __init__(self, id, pos_x, pos_y):
+    def __init__(self, id):
         self.id = id
-        self.pos = [pos_x, pos_y]
         self.comp = np.random.normal(VEC_COMP_RESOURCE, 70)
         self.power = np.random.normal(VEC_POWER, 0.002)
         self.crowd = 1 #init as 1 (N_j)
 
 class Env:
-    def __init__(self, nv, ns, load_vehicle_position, load_task_position, load_server_position):
+    def __init__(self, nv, ns, load_vehicle_position, load_task_position):
         self.num_vehicle = nv
         self.vehicles = []
         self.num_server = ns
@@ -55,10 +54,9 @@ class Env:
         self.task_data.set_index("Timestamp", inplace=True)
         self.update_task()
 
-        # .csv파일에서 server 불러오기
-        self.server_data = pd.read_csv(load_server_position)
-        for d in self.server_data.values:
-            self.servers.append(Server(id=d[0], pos_x=d[1], pos_y=d[2]))
+        # server 불러오
+        for s in range(self.num_server):
+            self.servers.append(Server(id=s+1))
 
     def update_vehicle(self):
         sub_data = self.vehicle_data.loc[self.update]
