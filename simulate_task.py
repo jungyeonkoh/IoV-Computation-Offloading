@@ -1,6 +1,7 @@
 import sys
 import csv
 import random
+import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout
 )
@@ -45,7 +46,7 @@ class Simulator(QWidget):
                 data_per_task = []
                 data_per_task.append(j + 1) #timestamp
                 data_per_task.append(i + 1) #vehicle_id
-                data_per_task.append(random.randint(1, 100)) #threshold (needed to be scaled)
+                data_per_task.append(np.random.normal(5, 1)) #threshold
                 data_per_task.append(random.randint(1, 100)) #input
                 data_per_task.append(random.randint(1,100)) #computation
                 data_per_task.append(random.random()) #weight(0~1)
