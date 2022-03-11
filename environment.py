@@ -99,18 +99,17 @@ class Env:
         for v in range(self.num_vehicle):
             # 논문 순서따름: threshold, velocity, x_i, y_i, distance, N_j
             # (논문 수정하기: GPS point --> distance btwn vehicles and servers)
+            # (논문 수정하기: 1*26 1-dim. vector)
             state_vector_by_vehicle = []
 
-            server_vector = []
+            local_time, local_energy = self.get_local_computing(v+1)
+            state_vector_by_vehicle.append(local_time)
+            state_vector_by_vehicle.append(local_energy)
             for s in range(self.num_server):
-                server_vector.append(self.servers[s].crowd)
+                remote_time, remote_energy = self.get_remote_computing(v+1, s+1)
+                state_vector_by_vehicle.append(remote_time)
+                state_vector_by_vehicle.append(remote_energy)
 
-            state_vector_by_vehicle.append(self.tasks[v].threshold)
-            state_vector_by_vehicle.append(self.vehicles[v].velocity)
-            state_vector_by_vehicle.append(self.tasks[v].input)
-            state_vector_by_vehicle.append(self.tasks[v].comp)
-            state_vector_by_vehicle.append(self.vehicles[v].distance)
-            state_vector_by_vehicle.append(server_vector)
             state_vector.append(state_vector_by_vehicle)
         return state_vector
 
@@ -126,9 +125,6 @@ class Env:
         return shared_bandwidth * math.log2(log+1)
 
     def get_local_computing(self, v):
-        """ 
-        scaling: KAPPA -->
-        """
         time = self.tasks[v-1].comp / self.vehicles[v].comp
         energy = KAPPA * (self.vehicles[v].comp ** 2) * self.tasks[v-1].comp
         return time, energy
