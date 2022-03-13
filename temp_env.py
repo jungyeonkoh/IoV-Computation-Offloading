@@ -150,7 +150,8 @@ class Env:
 
         local_time, local_energy = self.get_local_computing(vehicle + 1)
         # print(local_time, local_energy)
-        return 100 - (action[0] - local_time) ** 2
+        return -1 * (action[0] - local_time) ** 2
+        # return action[0]
 
     def train_step(self):
         """
