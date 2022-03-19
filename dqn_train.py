@@ -1,5 +1,5 @@
-from temp_env import *
-# from environment import *
+# from temp_env import *
+from environment import *
 import tensorflow as tf
 from collections import deque
 import random
@@ -7,7 +7,7 @@ import numpy as np
 
 num_vehicles = 3
 num_servers = 12
-sum_len = 10  # length of weighted reward sum   100
+sum_len = 3  # length of weighted reward sum   100
 gamma = 0.8  # decay rate of weighted reward sum
 num_episodes = 10
 num_timesteps = 1000  # number of timesteps in one episode
@@ -20,27 +20,51 @@ alloc_unit = 0.1  # the proportion of the task that the vehicle processes (that 
 # is in the interval [0, 1].
 # we consider only integer multiples of alloc_unit in this interval [0, 1]
 input_size = 2 * num_servers + 2  # length of state vector
-num_possible_allocs = 1 / alloc_unit + 1  # number of possible allocation proportions
+num_possible_allocs = int(1 / alloc_unit) + 1  # number of possible allocation proportions
 output_size = num_possible_allocs * num_servers  # number of possible actions
 
-dqns = []
-for i in range(num_vehicles):
-    dqn = tf.keras.Sequential([
-        tf.keras.layers.Dense(1024, activation='relu'),
-        tf.keras.layers.Dense(1024, activation='relu'),
-        tf.keras.layers.Dense(1024, activation='relu'),
-        tf.keras.layers.Dense(1024, activation='relu'),
-        tf.keras.layers.Dense(1024, activation='relu'),
-        tf.keras.layers.Dense(1024, activation='relu'),
-        tf.keras.layers.Dense(output_size)
-    ])
-    dqns.append(dqn)
+# dqns = []
+# for i in range(num_vehicles):
+#     dqn = tf.keras.Sequential([
+#         tf.keras.layers.Dense(1000, activation='relu'), tf.keras.layers.Dense(1000, activation='relu'),
+#         tf.keras.layers.Dense(1000, activation='relu'), tf.keras.layers.Dense(1000, activation='relu'),
+#         tf.keras.layers.Dense(1000, activation='relu'), tf.keras.layers.Dense(1000, activation='relu'),
+#         tf.keras.layers.Dense(1000, activation='relu'), tf.keras.layers.Dense(1000, activation='relu'),
+#         tf.keras.layers.Dense(1000, activation='relu'), tf.keras.layers.Dense(1000, activation='relu'),
+#         tf.keras.layers.Dense(output_size)
+#     ])
+#     dqns.append(dqn)
+
+num_layers = 6
+
+
+class DDDQN(tf.keras.Model):
+    """deuling DQN"""
+    def __init__(self):
+        super(DDDQN, self).__init__()
+        self.layer_list = [tf.keras.layers.Dense(128, activation='relu') for i in range(num_layers)]
+        self.v = tf.keras.layers.Dense(1, activation=None)
+        self.a = tf.keras.layers.Dense(output_size, activation=None)
+
+    def call(self, x):
+        for i in range(num_layers):
+            x = self.layer_list[i](x)
+        v = self.v(x)
+        a = self.a(x)
+        Q = v + (a - tf.math.reduce_mean(a, axis=1, keepdims=True))
+        return Q
+
+
+dqns = [DDDQN() for i in range(num_vehicles)]  # create a DQN for each vehicle
+
 
 random_chance = 0.9  # probability of choosing action randomly
+random_decay_step = 50
+random_decay_rate = 0.8
 
 
 def choose_action(dqn, state):
-    if random.random() > random_chance * 0.8 ** (step_count / 100):
+    if random.random() > random_chance * random_decay_rate ** (step_count / random_decay_step):
         qualities = dqn(state)
         action = tf.math.argmax(qualities[0])
         action = int(action)
@@ -123,7 +147,7 @@ def update_parameters():
 
 
 step_count = 1
-optims = [tf.keras.optimizers.Adam(learning_rate=tf.keras.optimizers.schedules.ExponentialDecay(0.01, 50, 0.8))
+optims = [tf.keras.optimizers.Adam(learning_rate=tf.keras.optimizers.schedules.ExponentialDecay(0.01, 100, 0.8))
           for i in range(num_vehicles)]  # each vehicle has one optimizer
 
 for i in range(num_episodes):
