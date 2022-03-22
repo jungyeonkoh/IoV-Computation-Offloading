@@ -1,0 +1,23 @@
+isTrain: True
+experiment_name: toy1
+episode_size: 1000
+batch_size: 50
+discount_rate: 0.99
+print_reward_interval: 1000
+
+EnvironmentParams:
+  load_vehicle_position: "./data/train.csv"
+  load_task_position: "./simulated_tasks.csv"
+  nv: 2
+  ns: 12
+
+ActorParams:
+  state_space: 26
+  action_space: 12
+  num_hidden_layer: 3
+  hidden_dim: 64
+
+CriticParams:
+  state_space: 26
+  num_hidden_layer: 3
+  hidden_dim: 64

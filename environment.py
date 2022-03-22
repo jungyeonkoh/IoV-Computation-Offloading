@@ -4,7 +4,7 @@ import math
 
 # Parameter
 # Distance = ~10000m
-#  
+#
 VEH_COMP_RESOURCE = 50 #(MHz)
 VEH_TRAN_POWER = 1000 #scaling #0.1(W)
 VEC_COMP_RESOURCE = 6300 #(MHz)
@@ -84,6 +84,9 @@ class Env:
         sub_data = self.task_data.loc[self.update]
         sub_list = sub_data.values
         self.tasks = []
+
+        # for single vehicle
+        #self.tasks.append(Task(vehicle=sub_list[0], threshold=sub_list[1], input=sub_list[2], comp=sub_list[3], e_weight=sub_list[4]))
         for d in sub_list:
             self.tasks.append(Task(vehicle=d[0], threshold=d[1], input=d[2], comp=d[3], e_weight=d[4]))
         self.update += 1
@@ -102,39 +105,37 @@ class Env:
             # (논문 수정하기: 1*26 1-dim. vector)
             state_vector_by_vehicle = []
 
-            local_time, local_energy = self.get_local_computing(v+1)
+            local_time, local_energy = self.get_local_computing(v) # vehicle index: 0~
             state_vector_by_vehicle.append(local_time)
             state_vector_by_vehicle.append(local_energy)
             for s in range(self.num_server):
-                remote_time, remote_energy = self.get_remote_computing(v+1, s+1)
+                remote_time, remote_energy = self.get_remote_computing(v, s)
                 state_vector_by_vehicle.append(remote_time)
                 state_vector_by_vehicle.append(remote_energy)
 
             state_vector.append(state_vector_by_vehicle)
         return state_vector
 
-    def get_max_tolerance(self, v, s): # Eq 1,2 # ID starts from 1
-        #todo: .csv speed error --> stay_time~N(5,1)
-        stay_time = 2 * self.vehicles[v-1].distance[s-1] / self.vehicles[v-1].v 
-        return min(stay_time, self.tasks[v-1].threshold)
+    # def get_max_tolerance(self, v, s): # Eq 1,2 # ID starts from 1
+    #     stay_time = 2 * self.vehicles[v-1].distance[s-1] / self.vehicles[v-1].v
+    #     return min(stay_time, self.tasks[v-1].threshold)
 
-    def get_transmission_rate(self, v, s):
-        shared_bandwidth = BANDWIDTH / self.servers[s-1].crowd
-        log = self.vehicles[v-1].tran * ((self.vehicles[v-1].distance[s-1] / 1000) ** (-PATH_FADE))
-        log /= self.servers[s-1].crowd
+    def get_transmission_rate(self, v, s): # vehicle index: 0~, server index: 0~
+        shared_bandwidth = BANDWIDTH / self.servers[s].crowd
+        log = self.vehicles[v].tran * ((self.vehicles[v].distance[s] / 1000) ** (-PATH_FADE))
+        log /= self.servers[s].crowd
         return shared_bandwidth * math.log2(log+1)
 
-    def get_local_computing(self, v):
-        time = self.tasks[v-1].comp / self.vehicles[v].comp
-        energy = KAPPA * (self.vehicles[v].comp ** 2) * self.tasks[v-1].comp
+    def get_local_computing(self, v): # vehicle index: 0~
+        time = self.tasks[v].comp / self.vehicles[v].comp
+        energy = KAPPA * (self.vehicles[v].comp ** 2) * self.tasks[v].comp
         return time, energy
 
-    def get_remote_computing(self, v, s):
-        trans = self.tasks[v-1].input / self.get_transmission_rate(v,s)
-        comp = self.tasks[v-1].comp / (self.servers[s-1].comp / self.servers[s-1].crowd)
+    def get_remote_computing(self, v, s): # vehicle index: 0~ / server index: 0~
+        trans = self.tasks[v].input / self.get_transmission_rate(v,s)
+        comp = self.tasks[v].comp / (self.servers[s].comp / self.servers[s].crowd)
         time = trans + comp
-        energy = self.vehicles[v-1].tran * (10 ** -4) * trans + self.servers[s-1].power * comp # ~0.01
-        print(time, energy)
+        energy = self.vehicles[v].tran * (10 ** -4) * trans + self.servers[s].power * comp # ~0.01
         return time, energy
 
     def calculate_reward(self, vehicle, action): # 논문 수정하기 / 수식 이상함
@@ -148,21 +149,29 @@ class Env:
         energy = self.tasks[vehicle].e_weight * (action[0] * local_energy + (1-action[0]) * remote_energy)
         return reward - time - energy
 
-    def train_step(self):
+    def step(self, action): # action(server) index: 0~
         """
         Step function of the environment.
         Calculates the rewards based on the action taken by the vehicles.
         :return:
+            next_state
             rewards: concatenated reward of each vehicle for the taken actions
         """
-        rews = np.zeros(self.num_vehicle)
+        for i in range(self.num_server):
+            self.servers[i].crowd = 1
+        for i in range(self.num_vehicle):
+            self.servers[action[i]].crowd += 1
 
-        state = self.construct_state()
-        action = np.zeros((self.num_vehicle, 2)) # 논문 수정하기: action = [float, int] (vehicle, #server)
-        for v in range(self.num_vehicles):
-            #action[v] = model.infer_action() #TODO
-            rews[v] = self.calculate_reward(v, action[v])
+        rewards = []
+        for i in range(self.num_vehicle):
+            reward = 15
+            remote_time, remote_energy = self.get_remote_computing(i, action[i])
+            time = (1-self.tasks[i].e_weight) * remote_time
+            energy = self.tasks[i].e_weight * remote_energy
+            reward -= time + energy
+            rewards.append(reward)
+
         self.update_vehicle()
         self.update_task()
-        return rews
-
+        next_state = self.construct_state()
+        return next_state, rewards
