@@ -5,16 +5,16 @@ from collections import deque
 import random
 import numpy as np
 
-num_vehicles = 3
+num_vehicles = 5
 num_servers = 12
-sum_len = 3  # length of weighted reward sum   100
+sum_len = 10  # length of weighted reward sum   100
 gamma = 0.8  # decay rate of weighted reward sum
 num_episodes = 10
 num_timesteps = 1000  # number of timesteps in one episode
 
-mem_capacity = 500
+mem_capacity = 200
 exp_mems = [deque([], maxlen=mem_capacity) for i in range(num_vehicles)]
-batch_size = 64
+batch_size = 32
 
 alloc_unit = 0.1  # the proportion of the task that the vehicle processes (that is allocated to the vehicle)
 # is in the interval [0, 1].
@@ -22,6 +22,7 @@ alloc_unit = 0.1  # the proportion of the task that the vehicle processes (that 
 input_size = 2 * num_servers + 2  # length of state vector
 num_possible_allocs = int(1 / alloc_unit) + 1  # number of possible allocation proportions
 output_size = num_possible_allocs * num_servers  # number of possible actions
+output_size = num_servers  # temp code for server picking only (no partial offloading)
 
 # dqns = []
 # for i in range(num_vehicles):
@@ -92,15 +93,29 @@ def timestep(step_count, reward_record, exps):
         action = choose_action(dqns[v_index], np_states[v_index: v_index + 1])
         actions.append(action)
 
-    for v_index in range(num_vehicles):
-        # convert action from scalar representation into vector representation
-        action_vector = [int(actions[v_index] / num_servers) * alloc_unit, actions[v_index] % num_servers + 1]
-        rews.append(env.calculate_reward(v_index, action_vector))
-    env.update_vehicle()
-    env.update_task()
-    next_states = env.construct_state()
+    # old code for old environment
+
+    # for v_index in range(num_vehicles):
+    #     # convert action from scalar representation into vector representation
+    #     action_vector = [int(actions[v_index] / num_servers) * alloc_unit, actions[v_index] % num_servers]  # + 1]
+    #     rews.append(env.calculate_reward(v_index, action_vector))
+    # env.update_vehicle()
+    # env.update_task()
+    # next_states = env.construct_state()
+    # rews_sum = sum(rews)
+    # reward_record.append(rews_sum)
+
+
+
+
+    # temp code for server picking only (no partial offloading)
+    # actions = [int(action) for action in actions]
+    next_states, rews = env.step(actions)
     rews_sum = sum(rews)
     reward_record.append(rews_sum)
+
+
+
 
     # store experience in memory
     for v_index in range(num_vehicles):
@@ -162,11 +177,11 @@ for i in range(num_episodes):
             loss = update_parameters()
 
         # if step_count % 100 == 0:
-        NUM = 50
+        NUM = 200
         if step_count % NUM == 0:
             print(f'step: {step_count}')
-            print(f'loss: {loss}')
-            print(f'WRS: {w_sum}')
+            # print(f'loss: {loss}')
+            # print(f'WRS: {w_sum}')
             print(f'reward sum: {sum(reward_record[-NUM:])}')
             print()
 
