@@ -37,7 +37,7 @@ class Server:
         self.crowd = 1 #init as 1 (N_j)
 
 class Env:
-    def __init__(self, nv, ns, load_vehicle_position, load_task_position):
+    def __init__(self, nv, ns, vehicle, vehicle_test, task, task_test, train):
         self.num_vehicle = nv
         self.vehicles = []
         self.num_server = ns
@@ -46,13 +46,17 @@ class Env:
 
         self.update = 1
 
+        if train:
+            self.vehicle_data = pd.read_csv(vehicle)
+            self.task_data = pd.read_csv(task)
+        else:
+            self.vehicle_data = pd.read_csv(vehicle_test)
+            self.task_data = pd.read_csv(task_test)
+
         # .csv파일에서 vehicle 불러오기
-        self.vehicle_data = pd.read_csv(load_vehicle_position)
         self.vehicle_data.set_index("TIMESTAMP", inplace=True)
         self.update_vehicle()
-
         # .csv파일에서 task 불러오기
-        self.task_data = pd.read_csv(load_task_position)
         self.task_data.set_index("Timestamp", inplace=True)
         self.update_task()
 
@@ -90,7 +94,6 @@ class Env:
         for d in sub_list:
             self.tasks.append(Task(vehicle=d[0], threshold=d[1], input=d[2], comp=d[3], e_weight=d[4]))
         self.update += 1
-
     def construct_state(self):
         """
         Constructs the state to be exploited by the algorithms.
@@ -138,18 +141,19 @@ class Env:
         energy = self.vehicles[v].tran * (10 ** -4) * trans + self.servers[s].power * comp # ~0.01
         return time, energy
 
-    def calculate_reward(self, vehicle, action): # 논문 수정하기 / 수식 이상함
+    def calculate_reward(self, vehicle, action, assign_prob): # 논문 수정하기 / 수식 이상함
         """
         Calculates the reward based on the action of the vehicle.
         """
-        reward = self.get_max_tolerance(vehicle, action[1])
+        reward = 15
         local_time, local_energy = self.get_local_computing(vehicle)
-        remote_time, remote_energy = self.get_remote_computing(vehicle, action[1])
-        time = (1-self.tasks[vehicle].e_weight) * (action[0] * local_time + (1-action[0]) * remote_time)
-        energy = self.tasks[vehicle].e_weight * (action[0] * local_energy + (1-action[0]) * remote_energy)
+        remote_time, remote_energy = self.get_remote_computing(vehicle, action)
+        time = (1-self.tasks[vehicle].e_weight) * (assign_prob * local_time + (1-assign_prob) * remote_time)
+        energy = self.tasks[vehicle].e_weight * (assign_prob * local_energy + (1-assign_prob) * remote_energy)
         return reward - time - energy
 
-    def step(self, action): # action(server) index: 0~
+    def step(self, action):
+    #def step(self, action, assign_prob): # action(server) index: 0~
         """
         Step function of the environment.
         Calculates the rewards based on the action taken by the vehicles.
@@ -164,12 +168,9 @@ class Env:
 
         rewards = []
         for i in range(self.num_vehicle):
-            reward = 15
-            remote_time, remote_energy = self.get_remote_computing(i, action[i])
-            time = (1-self.tasks[i].e_weight) * remote_time
-            energy = self.tasks[i].e_weight * remote_energy
-            reward -= time + energy
-            rewards.append(reward)
+            reward = self.calculate_reward(i, action[i], 0.)
+            #reward = self.calculate_reward(i, action[i], assign_prob[i])
+            rewards.append(reward.item())
 
         self.update_vehicle()
         self.update_task()

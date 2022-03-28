@@ -6,13 +6,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Categorical
 import random
-import os
 import numpy as np
-from network import Actor, Critic
+from new_network import Actor, Critic
 
 seed = 1
+max_step = 5000
 
-def train(config, env, rank, episode_size, step_size, batch_size, discount_rate, global_Actor, global_Critic):
+def train(config, env, rank, episode_size, batch_size, discount_rate, global_Actor, global_Critic):
     torch.manual_seed(seed+rank)
 
     local_Actor = Actor(**config["ActorParams"])
@@ -23,8 +23,6 @@ def train(config, env, rank, episode_size, step_size, batch_size, discount_rate,
     critic_optimizer = optim.Adam(global_Critic.parameters(), lr=1e-4)
 
     batch = []
-    rewards = []
-
 
     for epi in range(episode_size):
         env.update = 1
@@ -32,12 +30,13 @@ def train(config, env, rank, episode_size, step_size, batch_size, discount_rate,
 
         score = 0
         step = 0
-        while step < step_size:
+
+        while step < max_step:
             # Get action
-            action_prob = local_Actor(torch.FloatTensor(state)) # shape: (V, S)
+            action_prob, assign_prob = local_Actor(torch.FloatTensor(state)) #action_prob: (V, S), assign_prob: (V, 1)
             action_dist = Categorical(action_prob)
             action = action_dist.sample() # server index : 0~
-            next_state, reward = env.step(action)
+            next_state, reward = env.step(action, assign_prob)
             done = np.zeros_like(reward) if len(batch) == batch_size - 1 else np.ones_like(reward)
             action_prob_temp = []
             for i in range(len(action)):
@@ -101,25 +100,8 @@ def train(config, env, rank, episode_size, step_size, batch_size, discount_rate,
             if (step % 1000 == 0):
                 print("Episode: ", epi, " Step: ", step, " Reward: ", score/step)
 
-        print("Save reward value: ", score/step_size)
-        rewards.append(score/step_size)
 
-        # print weight values
-        if epi % 5 == 4:
-            np.save("reward"+str(env.num_vehicle)+"_"+str(epi)+".npy", rewards)
-        # save model weights
-        if epi % 10 == 0:
-            print("Save model")
-            save_dir = "./a3c_v"+str(env.num_vehicle)
-            if not os.path.isdir(save_dir):
-                os.mkdir(save_dir)
-            torch.save(local_Actor.state_dict(), os.path.join(save_dir, str(epi)+"_local_actor.pt"))
-            torch.save(local_Critic.state_dict(), os.path.join(save_dir, str(epi)+"_local_critic.pt"))
-            torch.save(global_Actor.state_dict(), os.path.join(save_dir, str(epi)+"_global_actor.pt"))
-            torch.save(global_Critic.state_dict(), os.path.join(save_dir, str(epi)+"_global_critic.pt"))
-    return rewards
-
-def test(env, step_size, print_reward_interval, global_Actor):
+def test(env, print_reward_interval, global_Actor):
     iteration = 1
     while True:
         score = 0
@@ -127,7 +109,7 @@ def test(env, step_size, print_reward_interval, global_Actor):
         env.update = 1
         state = env.construct_state()
 
-        while step < step_size:
+        while step < max_step:
             action_prob = global_Actor(torch.FloatTensor(state))
             action_dist = Categorical(action_prob)
             action = action_dist.sample()
@@ -140,40 +122,6 @@ def test(env, step_size, print_reward_interval, global_Actor):
             if step % print_reward_interval == 0:
                 print("Iteration: ", iteration, " Step: ", step, " Reward: ", score/step)
         iteration += 1
-
-def nn(env):
-    step = 0
-    score = 0
-
-    while step < step_size:
-        rewards = []
-        for i in range(env.num_vehicle):
-            action = np.argmin(env.vehicles[i].distance)
-            reward = env.calculate_reward(i, action, 0.)
-            rewards.append(reward/100)
-        env.update_vehicle()
-        env.update_task()
-        score += np.mean(rewards)
-        step += 1
-        if step % 1000 == 0:
-            print(step, " : ", score / step)
-
-def rand(env):
-    step = 0
-    score = 0
-
-    while step < step_size:
-        rewards = []
-        for i in range(env.num_vehicle):
-            action = np.random.randint(0, env.num_server)
-            reward = env.calculate_reward(i, action, 0.)
-            rewards.append(reward / 100)
-        env.update_vehicle()
-        env.update_task()
-        score += np.mean(rewards)
-        step += 1
-        if step % 1000 == 0:
-            print(step, " : ", score / step)
 
 def seed_torch(seed):
     torch.manual_seed(seed)
@@ -189,14 +137,7 @@ if __name__ == '__main__':
     config = yaml.load(open("./experiment.yaml"), Loader=yaml.FullLoader)
 
     env = environment.Env(**config["EnvironmentParams"], train=True)
-
-    #nn(env)
-    #rand(env)
-
     #test_env = environment.Env(**config["EnvironmentParams"], train=False)
-    # model = TheModelClass(*args, **kwargs)
-    # model.load_state_dict(torch.load(PATH))
-    # model.eval()
     global_Actor = Actor(**config["ActorParams"])
     global_Critic = Critic(**config["CriticParams"])
     global_Actor.share_memory()
@@ -218,11 +159,11 @@ if __name__ == '__main__':
     print("MP start method: ", mp.get_start_method())
     print("==========")
 
-    # p = mp.Process(target=test, args=(env, step_size, print_reward_interval, global_Actor))
-    # p.start()
-    # processes.append(p)
+    #p = mp.Process(target=test, args=(test_env, print_reward_interval, global_Actor))
+    #p.start()
+    #processes.append(p)
     for rank in range(process_num):
-        p = mp.Process(target=train, args=(config, env, rank, episode_size, step_size, batch_size, discount_rate, global_Actor, global_Critic))
+        p = mp.Process(target=train, args=(config, env, rank, episode_size, batch_size, discount_rate, global_Actor, global_Critic))
         p.start()
         processes.append(p)
     for p in processes:
