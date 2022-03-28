@@ -141,15 +141,22 @@ def test(env, step_size, print_reward_interval, global_Actor):
                 print("Iteration: ", iteration, " Step: ", step, " Reward: ", score/step)
         iteration += 1
 
-def nn(env):
+def nn(env, step_size):
     step = 0
     score = 0
 
     while step < step_size:
         rewards = []
+        actions = []
+
+        for i in range(env.num_server):
+            env.servers[i].crowd = 1
         for i in range(env.num_vehicle):
             action = np.argmin(env.vehicles[i].distance)
-            reward = env.calculate_reward(i, action, 0.)
+            actions.append(action)
+            env.servers[action].crowd += 1
+        for i in range(env.num_vehicle):
+            reward = env.calculate_reward(i, actions[i], 0.)
             rewards.append(reward/100)
         env.update_vehicle()
         env.update_task()
@@ -158,15 +165,22 @@ def nn(env):
         if step % 1000 == 0:
             print(step, " : ", score / step)
 
-def rand(env):
+def rand(env, step_size):
     step = 0
     score = 0
 
     while step < step_size:
         rewards = []
+        actions = []
+
+        for i in range(env.num_server):
+            env.servers[i].crowd = 1
         for i in range(env.num_vehicle):
             action = np.random.randint(0, env.num_server)
-            reward = env.calculate_reward(i, action, 0.)
+            actions.append(action)
+            env.servers[action].crowd += 1
+        for i in range(env.num_vehicle):
+            reward = env.calculate_reward(i, actions[i], 0.)
             rewards.append(reward / 100)
         env.update_vehicle()
         env.update_task()
@@ -189,11 +203,7 @@ if __name__ == '__main__':
     config = yaml.load(open("./experiment.yaml"), Loader=yaml.FullLoader)
 
     env = environment.Env(**config["EnvironmentParams"], train=True)
-
-    #nn(env)
-    #rand(env)
-
-    #test_env = environment.Env(**config["EnvironmentParams"], train=False)
+    # test_env = environment.Env(**config["EnvironmentParams"], train=False)
     # model = TheModelClass(*args, **kwargs)
     # model.load_state_dict(torch.load(PATH))
     # model.eval()
@@ -209,6 +219,9 @@ if __name__ == '__main__':
     batch_size = config.setdefault("batch_size", 128)
     discount_rate = config.setdefault("discount_rate", 0.99)
     print_reward_interval = config.setdefault("print_reward_interval", 1000)
+
+    #nn(env, step_size)
+    #rand(env, step_size)
 
     print("==========")
     print("Experiment: " + experiment_name)
