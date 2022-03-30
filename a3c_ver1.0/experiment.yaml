@@ -1,0 +1,29 @@
+isTrain: True
+experiment_name: toy1
+episode_size: 100
+step_size: 10000
+batch_size: 50
+discount_rate: 0.99
+print_reward_interval: 1000
+num_processes: 10
+seed: 1
+max_step: 9999
+
+EnvironmentParams:
+  vehicle: "./data/train.csv"
+  vehicle_test: "./data/test.csv"
+  task: "./simulated_tasks_100.csv"
+  task_test: "./simulated_tasks_test.csv"
+  nv: 100
+  ns: 12
+
+ActorParams:
+  state_space: 26
+  action_space: 12
+  num_hidden_layer: 3
+  hidden_dim: 64
+
+CriticParams:
+  state_space: 26
+  num_hidden_layer: 3
+  hidden_dim: 64

@@ -1,97 +1,101 @@
-from __future__ import print_function
-
-import argparse
-import os
-
+import environment
+import yaml
 import torch
 import torch.multiprocessing as mp
 import torch.optim as optim
-
-#import my_optim
-import environment as envs
-from Actor import Actor
-from Critic import Critic
+import torch.nn.functional as F
+from torch.distributions import Categorical
+import random
+import os
+import numpy as np
+from network import Actor, Critic
+import os
 from test import test
 from train import train
+#os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
-# Based on
-# https://github.com/pytorch/examples/tree/master/mnist_hogwild
-# Training settings
+def nn(env):
+    step = 0
+    score = 0
 
+    while step < max_step:
+        rewards = []
+        for i in range(env.num_vehicle):
+            action = np.argmin(env.vehicles[i].distance)
+            reward = env.calculate_reward(i, action, 0.)
+            rewards.append(reward/100)
+        env.update_vehicle()
+        env.update_task()
+        score += np.mean(rewards)
+        step += 1
+        if step % 1000 == 0:
+            print(step, " : ", score / step)
 
-parser = argparse.ArgumentParser(description='A3C')
-parser.add_argument('--lr', type=float, default=0.0001,
-                    help='learning rate (default: 0.0001)')
-parser.add_argument('--discount_rate', type=float, default=0.99,
-                    help='discount factor for rewards (default: 0.99)')
-parser.add_argument('--gae-lambda', type=float, default=1.00,
-                    help='lambda parameter for GAE (default: 1.00)')
-parser.add_argument('--entropy-coef', type=float, default=0.01,
-                    help='entropy term coefficient (default: 0.01)')
-parser.add_argument('--value-loss-coef', type=float, default=0.5,
-                    help='value loss coefficient (default: 0.5)')
-parser.add_argument('--max-grad-norm', type=float, default=50,
-                    help='value loss coefficient (default: 50)')
-parser.add_argument('--seed', type=int, default=1,
-                    help='random seed (default: 1)')
-parser.add_argument('--num-processes', type=int, default=16,
-                    help='how many training processes to use (default: 16)')
-parser.add_argument('--num-steps', type=int, default=256,
-                    help='number of forward steps in A3C (default: 256)')
-parser.add_argument('--max-episode-length', type=int, default=1000000,
-                    help='maximum length of an episode (default: 1000000)')
-parser.add_argument('--env-name', default='offloading',
-                    help='environment to train on (default: offloading)')
-parser.add_argument('--no-shared', default=False,
-                    help='use an optimizer without shared momentum.')
-parser.add_argument('--nv',type=int,default=100,
-                    help='number of vehicles. (default: 100)')
-parser.add_argument('--ns',type=int,default=12,
-                    help='number of servers. (default: 12)')
-parser.add_argument('--load_vehicle_position',default='./train.csv',
-                    help='number of vehicles. (default: ./train.csv)')
-parser.add_argument('--load_task_position',default='./simulated_tasks.csv',
-                    help='number of vehicles. (default: ./simulated_tasks.csv)')
-parser.add_argument('--load_vehicle_position_test',default='./test.csv',
-                    help='number of vehicles. (default: ./test.csv)')
-parser.add_argument('--load_task_position_test',default='./simulated_tasks_test.csv',
-                    help='number of vehicles. (default: ./simulated_tasks_test.csv)')
-parser.add_argument('--train_step',type=int,default=22350,
-                    help='number of servers. (default: 22350)')
-parser.add_argument('--test_step',type=int,default=2000,
-                    help='number of servers. (default: 11930)')
-parser.add_argument('--hidden_layer_num',type=int,default=2,
-                    help='number of hidden layer (default: 2)')
-parser.add_argument('--hidden_dim_size',type=int,default=128,
-                    help='number of hidden dimension size (default: 128)')
-parser.add_argument('--batch_size',type=int,default=128,
-                    help='number of batch size (default: 128)')
+def rand(env):
+    step = 0
+    score = 0
+
+    while step < max_step:
+        rewards = []
+        for i in range(env.num_vehicle):
+            action = np.random.randint(0, env.num_server)
+            reward = env.calculate_reward(i, action, 0.)
+            rewards.append(reward / 100)
+        env.update_vehicle()
+        env.update_task()
+        score += np.mean(rewards)
+        step += 1
+        if step % 1000 == 0:
+            print(step, " : ", score / step)
+
+def seed_torch(seed):
+    torch.manual_seed(seed)
+    if torch.backends.cudnn.enabled:
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
 
 if __name__ == '__main__':
 
-    args = parser.parse_args()
 
-    torch.manual_seed(args.seed)
-    global_Actor = Actor(state_space=(args.ns*2)+2,
-                  action_space=args.ns,
-                  num_hidden_layer=args.hidden_layer_num,
-                  hidden_dim=args.hidden_dim_size)
-    global_Critic = Critic(state_space=(args.ns*2)+2,
-                  num_hidden_layer=args.hidden_layer_num,
-                  hidden_dim=args.hidden_dim_size)
+    config = yaml.load(open("./experiment.yaml"), Loader=yaml.FullLoader)
+    seed=config["seed"]
+    np.random.seed(seed)
+    random.seed(seed)
+    seed_torch(seed)
+    #env = environment.Env(**config["EnvironmentParams"], train=True)
+
+    #nn(env)
+    #rand(env)
+
+    #test_env = environment.Env(**config["EnvironmentParams"], train=False)
+    # model = TheModelClass(*args, **kwargs)
+    # model.load_state_dict(torch.load(PATH))
+    # model.eval()
+    global_Actor = Actor(**config["ActorParams"])
+    global_Critic = Critic(**config["CriticParams"])
+    global_Actor.share_memory()
+    global_Critic.share_memory()
+
+    isTrain = config.setdefault("isTrain", True)
+    experiment_name = config.setdefault("experiment_name", "")
+    #episode_size = config.setdefault("episode_size", 1000)
+    step_size = config.setdefault("step_size", 10000)
+    batch_size = config.setdefault("batch_size", 128)
+    discount_rate = config.setdefault("discount_rate", 0.99)
+    #print_reward_interval = config.setdefault("print_reward_interval", 1000)
 
     processes = []
+    num_processes=config["num_processes"]
 
     counter = mp.Value('i', 0)
     lock = mp.Lock()
 
-    p = mp.Process(target=test, args=(args.num_processes, args, global_Actor, counter))
+    p = mp.Process(target=test, args=(config,num_processes, global_Actor,counter,2000))
     p.start()
     processes.append(p)
 
-
-    for rank in range(0, args.num_processes):
-        p = mp.Process(target=train, args=(rank, args, global_Actor,global_Critic, counter, lock))
+    for rank in range(num_processes):
+        p = mp.Process(target=train, args=(config, rank, counter, lock, batch_size, discount_rate, global_Actor, global_Critic,config["max_step"]))
         p.start()
         processes.append(p)
     for p in processes:

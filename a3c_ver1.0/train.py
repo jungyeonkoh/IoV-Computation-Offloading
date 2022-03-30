@@ -1,116 +1,133 @@
+import environment
 import torch
-from torch.distributions import Categorical
-import torch.nn.functional as F
-import numpy as np
-import environment as envs
 import torch.optim as optim
-from Actor import Actor
-from Critic import Critic
+import torch.nn.functional as F
+from torch.distributions import Categorical
+import numpy as np
+from network import Actor, Critic
+import os
 
-def train(rank, args, global_Actor,global_Critic, counter, lock):
-    torch.manual_seed(args.seed + rank)
-    env = envs.Env(args.nv,args.ns,args.load_vehicle_position,args.load_task_position)
+def train(config, rank, counter,lock, batch_size, discount_rate, global_Actor, global_Critic,max_step):
+    torch.manual_seed(config["seed"]+rank)
+    print("Start "+str(rank)+"process train")
+    env = environment.Env(**config["EnvironmentParams"], train=True)
 
-    local_Actor=Actor(state_space=(args.ns*2)+2,
-                    action_space=args.ns,
-                    num_hidden_layer=args.hidden_layer_num,
-                    hidden_dim=args.hidden_dim_size)
-    local_Critic = Critic(state_space=(args.ns*2)+2,
-                    num_hidden_layer=args.hidden_layer_num,
-                    hidden_dim=args.hidden_dim_size)
+    local_Actor = Actor(**config["ActorParams"])
+    local_Critic = Critic(**config["CriticParams"])
     local_Actor.load_state_dict(global_Actor.state_dict())
     local_Critic.load_state_dict(global_Critic.state_dict())
+    actor_optimizer = optim.Adam(global_Actor.parameters(), lr=1e-4)
+    critic_optimizer = optim.Adam(global_Critic.parameters(), lr=1e-4)
 
+    batch = []
+    rewards = []
 
-    batch=[]
-    a_prob_list=[]
-
-  # Set Optimizer
-    actor_optimizer = optim.Adam(global_Actor.parameters(), lr=args.lr)
-    critic_optimizer = optim.Adam(global_Critic.parameters(), lr=args.lr)
-
+    hx=torch.zeros(config["EnvironmentParams"]["nv"],config["ActorParams"]["hidden_dim"])
+    cx=torch.zeros(config["EnvironmentParams"]["nv"],config["ActorParams"]["hidden_dim"])
+    epi=-1
     while True:
-        done=False
-        score=0
+        epi+=1
+        env.update = 1
+        state = env.reset()
 
-        step=0
-        s=env.reset()
-        while(not done) and (step < args.train_step):
-
-          a_prob = local_Actor(torch.from_numpy(s).float())
-          a_distrib = Categorical(a_prob)
-          
-          a = a_distrib.sample()
-          action=(a.detach()).numpy()
-          partial_rate=np.zeros_like(action)
-          actions = np.column_stack([partial_rate,action]).tolist()
-          
-          reward,s_prime =env.train_step(actions)
-          done_mask = np.zeros_like(reward) if len(batch)==(args.batch_size-1) else np.ones_like(reward)
-
-          for i in range(len(a)):
-            a_prob_list.append(a_prob[i][a[i]])
-            reward[i]/=100 
-          batch.append([s,reward,s_prime,a_prob_list,done_mask])
-          a_prob_list=[]
-          if len(batch)>=args.batch_size:
-            with lock:
-              counter.value+=1
-            s_buf = []
-            s_prime_buf = []
-            r_buf = []
-            prob_buf = []
-            done_buf = []
-
-            for item in batch:
-              s_buf.append(item[0])
-              r_buf.append(item[1])
-              s_prime_buf.append(item[2])
-              prob_buf.append(item[3])
-              done_buf.append(item[4])
-
-            s_buf = torch.FloatTensor(np.array(s_buf))
-            r_buf = torch.FloatTensor(np.array(r_buf)).unsqueeze(-1)
-            s_prime_buf = torch.FloatTensor(np.array(s_prime_buf))
-            done_buf = torch.FloatTensor(np.array(done_buf)).unsqueeze(-1)
-
-            v_s = local_Critic(s_buf)
-            v_prime = local_Critic(s_prime_buf)
-
-            Q = r_buf+args.discount_rate*v_prime.detach()*done_buf # value target
-            A =  Q - v_s   
+        score = 0
+        step = 0
+        
+        while step < max_step:
+            # Get action
             
-            # Update Critic
-            critic_optimizer.zero_grad()
-            critic_loss = F.mse_loss(v_s, Q.detach())
-            critic_loss.backward(retain_graph=True)
-            for global_param, local_param in zip(global_Critic.parameters(), local_Critic.parameters()):
-                global_param._grad = local_param.grad
+            action_prob,partial = local_Actor((torch.FloatTensor(state),(hx,cx))) # shape: (V, S)
+            action_dist = Categorical(action_prob)
+            action = action_dist.sample() # server index : 0~
+            next_state, reward = env.step(action,partial)
+            done = np.zeros_like(reward) if len(batch) == batch_size - 1 else np.ones_like(reward)
+            action_prob_temp = []
+            for i in range(len(action)):
+                action_prob_temp.append(action_prob[i][action[i]])
+                reward[i] /= 100
 
-            critic_optimizer.step()
-            # Update Actor
-            actor_optimizer.zero_grad()
-            actor_loss = 0
-            for idx, prob in enumerate(prob_buf):
-              for i in range(len(prob)):
-                actor_loss += -A[idx][i] * torch.log(prob[i])
-            actor_loss /= len(prob_buf) 
-            actor_loss.backward()
+            batch.append([state, next_state, reward, action_prob_temp, done])
 
-            for global_param, local_param in zip(global_Actor.parameters(), local_Actor.parameters()):
-                global_param._grad = local_param.grad
-            actor_optimizer.step()
+            if len(batch) >= batch_size:
+                state_buffer = []
+                next_state_buffer = []
+                reward_buffer = []
+                action_prob_buffer = []
+                done_buffer = []
+                
 
-            local_Actor.load_state_dict(global_Actor.state_dict())
-            local_Critic.load_state_dict(global_Critic.state_dict())
+                for item in batch:
+                    state_buffer.append(item[0])
+                    next_state_buffer.append(item[1])
+                    reward_buffer.append(item[2])
+                    action_prob_buffer.append(item[3])
+                    done_buffer.append(item[4])
 
-            batch = []
+                state_buffer = torch.FloatTensor(state_buffer) # (batch_size, V, state_size)
+                next_state_buffer = torch.FloatTensor(next_state_buffer)
+                reward_buffer = torch.FloatTensor(reward_buffer).unsqueeze(-1) # (batch_size, V, 1)
+                done_buffer = torch.FloatTensor(done_buffer).unsqueeze(-1) # (batch_size, V, 1)
 
-          s = s_prime
-          score += reward
-          step += 1
-          if(step==args.train_step):
-            break
+                value_state = local_Critic(state_buffer).squeeze(1) # (batch_size, V, 1)
+                value_next_state = local_Critic(next_state_buffer).squeeze(1) # (batch_size, V, 1)
+                Q = reward_buffer + discount_rate * value_next_state * done_buffer
+                A = Q - value_state
+
+                # update Critic
+                critic_optimizer.zero_grad()
+                critic_loss = F.mse_loss(value_state, Q.detach()) # constant
+                critic_loss.backward(retain_graph=True)
+                for global_param, local_param in zip(global_Critic.parameters(), local_Critic.parameters()):
+                    global_param._grad = local_param.grad
+                critic_optimizer.step()
+
+                # update Actor
+                actor_optimizer.zero_grad()
+                actor_loss = 0
+                for idx, prob in enumerate(action_prob_buffer):
+                    for i in range(len(prob)):
+                        actor_loss += -A[idx][i] * torch.log(prob[i])
+                actor_loss /= len(action_prob_buffer)
+                actor_loss.backward()
+                
+
+                for global_param, local_param in zip(global_Actor.parameters(), local_Actor.parameters()):
+                    global_param._grad = local_param.grad
+                actor_optimizer.step()
+
+                local_Actor.load_state_dict(global_Actor.state_dict())
+                local_Critic.load_state_dict(global_Critic.state_dict())
+                with lock:
+                    counter.value+=1
+
+                batch = []
+                hx=torch.zeros(config["EnvironmentParams"]["nv"],config["ActorParams"]["hidden_dim"])
+                cx=torch.zeros(config["EnvironmentParams"]["nv"],config["ActorParams"]["hidden_dim"])
+            else:
+                hx=hx.detach()
+                cx=cx.detach()
+
+            state = next_state
+            score += np.mean(reward)
+            step += 1
+            #if (step % 1000 == 0 and rank==1):
+             #   print("Episode: ", epi, " Step: ", step, " Reward: ", score/step)
 
         
-              
+        #print("Save reward value: ", score/max_step)
+        rewards.append(score/max_step)
+
+        # print weight values
+        if ((epi % 5) == 4 and rank==1):
+            np.save("reward"+str(env.num_vehicle)+"_"+str(epi)+".npy", rewards)
+        # save model weights
+        if ((epi % 10) == 0 and rank==1):
+            save_dir = "./a3c_v"+str(env.num_vehicle)
+            if not os.path.isdir(save_dir):
+                os.mkdir(save_dir)
+ #           torch.save(local_Actor.state_dict(), os.path.join(save_dir, str(epi)+"_local_actor.pt"))
+  #          torch.save(local_Critic.state_dict(), os.path.join(save_dir, str(epi)+"_local_critic.pt"))
+            torch.save(global_Actor.state_dict(), os.path.join(save_dir, str(epi)+"_global_actor.pt"))
+            torch.save(global_Critic.state_dict(), os.path.join(save_dir, str(epi)+"_global_critic.pt"))
+        if counter.value>=1000000:
+            break
