@@ -1,0 +1,23 @@
+2022-03-30-22h-49m-02s에 시작한 훈련의 log입니다.
+Time: 00h 01m 17s, num steps: 226, rewards: -1.7777699907092954
+Time: 00h 02m 42s, num steps: 490, rewards: -0.7903762562148832
+Time: 00h 04m 14s, num steps: 777, rewards: 0.06636552969263622
+Time: 00h 05m 54s, num steps: 1085, rewards: 0.5300425730475546
+Time: 00h 07m 40s, num steps: 1418, rewards: 0.8772981063779822
+Time: 00h 09m 35s, num steps: 1775, rewards: 1.085076767581779
+Time: 00h 11m 36s, num steps: 2146, rewards: 1.3427431037246023
+Time: 00h 13m 46s, num steps: 2526, rewards: 1.7388297157114512
+Time: 00h 16m 03s, num steps: 2931, rewards: 2.2756265191390512
+Time: 00h 18m 28s, num steps: 3358, rewards: 2.358653656356279
+Time: 00h 21m 00s, num steps: 3809, rewards: 2.5300825312254824
+Time: 00h 23m 39s, num steps: 4267, rewards: 2.602937590664176
+Time: 00h 26m 28s, num steps: 4737, rewards: 2.6746091335892546
+Time: 00h 29m 23s, num steps: 5230, rewards: 2.7101072289064554
+Time: 00h 32m 25s, num steps: 5743, rewards: 2.899284656273266
+Time: 00h 35m 36s, num steps: 6264, rewards: 2.8955213617765736
+Time: 00h 38m 54s, num steps: 6795, rewards: 2.886341447674358
+Time: 00h 42m 20s, num steps: 7347, rewards: 2.971908149790779
+Time: 00h 45m 55s, num steps: 7922, rewards: 3.2543003711707073
+Time: 00h 49m 38s, num steps: 8491, rewards: 3.0407692941879714
+Time: 00h 53m 32s, num steps: 9075, rewards: 3.071349286619688
+Time: 00h 57m 34s, num steps: 9682, rewards: 3.2282546486513093
